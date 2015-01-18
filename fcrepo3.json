@@ -1,0 +1,143 @@
+
+
+{
+  "variables": {
+    
+    "fcrepo3_version": "3.8.0",
+    "fcrepo3_services_version": "3.7",
+    "gsearch_version": "2.7.1",
+    "packer_fcrepo3_version": "0.1.0",
+    "sourceforge_downloads": "http://downloads.sourceforge.net/project",
+    
+    "packer_fcrepo3_repo": "http://github.com/ksclarke/packer-fcrepo3",
+    
+    "aws_access_key": "{{env `AWS_ACCESS_KEY`}}",
+    "aws_secret_key": "{{env `AWS_SECRET_KEY`}}",
+    "aws_security_group_id": "{{env `AWS_SECURITY_GROUP_ID`}}",
+    "aws_region": "{{env `AWS_REGION`}}",
+    "aws_instance_type": "{{env `AWS_INSTANCE_TYPE`}}",
+    "aws_source_ami": "{{env `AWS_SOURCE_AMI`}}",
+    "aws_virtualization_type": "{{env `AWS_VIRTUALIZATION_TYPE`}}",
+    "server_admin_email": "{{env `PACKER_GRAPHITE_EMAIL`}}",
+    "packer_build_name": "{{env `PACKER_GRAPHITE_BUILD_NAME`}}",
+    "docker_user": "{{env `DOCKER_USER`}}",
+    "server_host_name": "localhost",
+    "fedora_repository_name": "My Fedora Repository",
+    "fedora_pid_namespace": "my_namespace",
+    "tomcat_port": "80",
+    "tomcat_ssh_port": "443",
+    
+    "automatic_os_security_updates": "false",
+    "automatic_os_reboot": "false",
+    "jvm_memory": "500m",
+    "jvm_max_perm_size": "128m",
+    "keystore_config": "{{env `KEYSTORE_CONFIG`}}",
+    
+    "fcrepo3_admin_password": "",
+    "fcrepo3_db_password": "",
+    "mysql_root_password": "",
+    "keystore_password": ""
+  },
+  "builders": [
+    
+    {
+      "type": "amazon-ebs",
+      "access_key": "{{user `aws_access_key`}}",
+      "secret_key": "{{user `aws_secret_key`}}",
+      
+      "security_group_id": "{{user `aws_security_group_id`}}",
+      "region": "{{user `aws_region`}}",
+      "associate_public_ip_address": "true",
+      
+      "source_ami": "{{user `aws_source_ami`}}",
+      "instance_type": "{{user `aws_instance_type`}}",
+      "ami_virtualization_type": "{{user `aws_virtualization_type`}}",
+      
+      "ssh_username": "ubuntu",
+      "tags": { "OS_Version": "Ubuntu", "Release": "Fedora Repository {{user `fcrepo3_version`}}" },
+      
+      "ami_name": "{{user `packer_build_name`}} Fedora Repository ({{user `fcrepo3_version`}}) [{{timestamp}}]",
+      "ami_description": "A Fedora Repository ({{user `fcrepo3_version`}}) deployment built with Packer.io"
+    },
+    {
+      "type": "docker",
+      
+      "image": "ubuntu:14.04",
+      "commit": "true",
+      "pull": "true"
+    }
+  ],
+  "provisioners": [
+    
+    {
+      "type": "file",
+      "source": "configs/fedora-install.properties",
+      "destination": "/tmp/fedora-install.properties"
+    },
+    {
+      "type": "file",
+      "source": "scripts/reconfigure-fedora.sh",
+      "destination": "/tmp/reconfigure-fedora.sh"
+    },
+    
+    {
+      "type": "shell",
+      "environment_vars": [
+        "ROOT_DB_PASSWORD={{user `mysql_root_password`}}",
+        "KEYSTORE_PASSWORD={{user `keystore_password`}}",
+        "KEYSTORE_CONFIG={{user `keystore_config`}}",
+        "JVM_MEMORY={{user `jvm_memory`}}",
+        "JVM_MAX_PERM_SIZE={{user `jvm_max_perm_size`}}",
+        "FEDORA_DB_PASSWORD={{user `fcrepo3_db_password`}}",
+        "FEDORA_ADMIN_PASSWORD={{user `fcrepo3_admin_password`}}",
+        "FEDORA_VERSION={{user `fcrepo3_version`}}",
+        "TOMCAT_PORT={{user `tomcat_port`}}",
+        "TOMCAT_SSH_PORT={{user `tomcat_ssh_port`}}",
+        "SERVER_HOST_NAME={{user `server_host_name`}}",
+        "FEDORA_REPOSITORY_NAME={{user `fedora_repository_name`}}",
+        "FEDORA_PID_NAMESPACE={{user `fedora_pid_namespace`}}",
+        "GSEARCH_VERSION={{user `gsearch_version`}}",
+        "FEDORA_SERVICES_VERSION={{user `fcrepo3_services_version`}}",
+        "SOURCEFORGE={{user `sourceforge_downloads`}}"
+      ],
+      "scripts": [
+        "scripts/setup-base-system.sh",
+        
+        "scripts/install-mysql.sh",
+        "scripts/install-tomcat.sh",
+        "scripts/install-fedora.sh",
+        "scripts/install-gsearch.sh",
+        "scripts/configure-authbind.sh"
+      ]
+    },
+    {
+      "type": "shell",
+      "except": ["docker"],
+      "environment_vars": [
+        "PACKER_FCREPO3_REPO={{user `packer_fcrepo3_repo`}}",
+        "SERVER_HOST_NAME={{user `server_host_name`}}",
+        "SERVER_ADMIN_EMAIL={{user `server_admin_email`}}",
+        "AUTOMATIC_OS_SECURITY_UPDATES={{user `automatic_os_security_updates`}}",
+        "AUTOMATIC_OS_REBOOT={{user `automatic_os_reboot`}}"
+      ],
+      "scripts": [
+        "scripts/install-reconfigure-fedora.sh",
+        "scripts/modify-landscape.sh",
+        "scripts/configure-base-system.sh"
+      ]
+    },
+    {
+      "type": "shell",
+      "only": ["docker"],
+      "script": "scripts/install-supervisor.sh"
+    }
+  ],
+  "post-processors": [
+    {
+      "type": "docker-tag",
+      "only": ["docker"],
+      "repository": "{{user `docker_user`}}/packer-fcrepo3",
+      "tag": "{{user `packer_fcrepo3_version`}}"
+    }
+  ]
+}
